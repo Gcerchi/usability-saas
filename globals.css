@@ -1,0 +1,44 @@
+"use client";
+
+interface ProgressBarProps {
+  /** 0 a 100 — aqui usamos "nós visitados" como proxy de progresso, não um % real de conclusão */
+  elapsedSeconds: number;
+  timeLimitSeconds: number | null;
+  status: "IN_PROGRESS" | "SUCCESS" | "ABANDONED" | "FAILED";
+}
+
+export function ProgressBar({
+  elapsedSeconds,
+  timeLimitSeconds,
+  status,
+}: ProgressBarProps) {
+  const pct = timeLimitSeconds
+    ? Math.min(100, (elapsedSeconds / timeLimitSeconds) * 100)
+    : status === "SUCCESS"
+    ? 100
+    : Math.min(90, elapsedSeconds); // sem limite: cresce devagar até ~90%, sem fingir 100%
+
+  const barColor =
+    status === "SUCCESS"
+      ? "bg-emerald-500"
+      : status === "FAILED"
+      ? "bg-red-500"
+      : "bg-neutral-900";
+
+  const minutes = Math.floor(elapsedSeconds / 60);
+  const seconds = elapsedSeconds % 60;
+
+  return (
+    <div className="w-full h-14 border-b border-neutral-200 flex items-center px-6 gap-4 bg-white">
+      <div className="flex-1 h-1.5 rounded-full bg-neutral-100 overflow-hidden">
+        <div
+          className={`h-full transition-all duration-500 ease-out ${barColor}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <span className="text-sm tabular-nums text-neutral-500 font-medium min-w-[48px] text-right">
+        {minutes}:{seconds.toString().padStart(2, "0")}
+      </span>
+    </div>
+  );
+}

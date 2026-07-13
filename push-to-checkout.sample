@@ -1,0 +1,46 @@
+import { notFound } from "next/navigation";
+import { headers } from "next/headers";
+import { prisma } from "@/lib/prisma";
+import { TestPlayer } from "@/components/test-player/TestPlayer";
+import { MissionForPlayer } from "@/types";
+
+interface PageProps {
+  params: { missionId: string };
+}
+
+// Página server-rendered: garante que a TestSession já exista no banco antes
+// de qualquer postMessage chegar do iframe do Figma no client.
+export default async function TestPlayerPage({ params }: PageProps) {
+  const mission = await prisma.mission.findUnique({
+    where: { id: params.missionId },
+    include: { figmaPrototype: true },
+  });
+
+  if (!mission || mission.status !== "ACTIVE") {
+    notFound();
+  }
+
+  const headerList = headers();
+  const userAgent = headerList.get("user-agent") ?? undefined;
+
+  const session = await prisma.testSession.create({
+    data: {
+      missionId: mission.id,
+      currentNodeId: mission.startNodeId,
+      participantMeta: { userAgent },
+    },
+  });
+
+  const missionForPlayer: MissionForPlayer = {
+    id: mission.id,
+    title: mission.title,
+    instructions: mission.instructions,
+    embedUrl: mission.figmaPrototype.embedUrl,
+    startNodeId: mission.startNodeId,
+    targetNodeId: mission.targetNodeId,
+    errorNodeIds: mission.errorNodeIds,
+    timeLimitSeconds: mission.timeLimitSeconds,
+  };
+
+  return <TestPlayer mission={missionForPlayer} sessionId={session.id} />;
+}

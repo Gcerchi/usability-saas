@@ -1,0 +1,39 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+
+/**
+ * POST /api/results/events
+ * Body: SessionEventInput (ver src/types/index.ts)
+ *
+ * Chamado pelo TestPlayer a cada mensagem relevante recebida do iframe do
+ * Figma. Escrita "best effort": o player não bloqueia a experiência do
+ * participante esperando esta chamada responder.
+ */
+export async function POST(req: NextRequest) {
+  const { sessionId, type, nodeId, payload, elapsedMs } = await req.json();
+
+  if (!sessionId || !type) {
+    return NextResponse.json({ error: "Payload inválido." }, { status: 400 });
+  }
+
+  await prisma.sessionEvent.create({
+    data: { sessionId, type, nodeId, payload, elapsedMs },
+  });
+
+  // Mantém contadores/estado "quente" na sessão para leitura rápida no dashboard
+  // sem precisar agregar SessionEvent a cada render.
+  if (type === "PRESENTED_NODE_CHANGED" && nodeId) {
+    await prisma.testSession.update({
+      where: { id: sessionId },
+      data: { currentNodeId: nodeId, navigationCount: { increment: 1 } },
+    });
+  }
+  if (type === "MISCLICK") {
+    await prisma.testSession.update({
+      where: { id: sessionId },
+      data: { misclickCount: { increment: 1 } },
+    });
+  }
+
+  return NextResponse.json({ ok: true });
+}

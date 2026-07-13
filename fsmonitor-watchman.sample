@@ -1,0 +1,70 @@
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+
+/**
+ * POST /api/missions
+ * Body: {
+ *   title, instructions, creatorId,
+ *   figmaUrl, fileKey, fileName, embedUrl,   // dados já resolvidos por /api/figma/parse-url
+ *   startNodeId, targetNodeId, errorNodeIds?, timeLimitSeconds?
+ * }
+ */
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const {
+    title,
+    instructions,
+    creatorId,
+    figmaUrl,
+    fileKey,
+    fileName,
+    embedUrl,
+    startNodeId,
+    targetNodeId,
+    errorNodeIds,
+    timeLimitSeconds,
+  } = body;
+
+  if (!title || !instructions || !creatorId || !embedUrl || !startNodeId || !targetNodeId) {
+    return NextResponse.json(
+      { error: "Campos obrigatórios ausentes." },
+      { status: 400 }
+    );
+  }
+
+  const figmaPrototype = await prisma.figmaPrototype.create({
+    data: {
+      originalUrl: figmaUrl,
+      fileKey,
+      fileName,
+      embedUrl,
+      startingNodeId: startNodeId,
+    },
+  });
+
+  const mission = await prisma.mission.create({
+    data: {
+      title,
+      instructions,
+      creatorId,
+      figmaPrototypeId: figmaPrototype.id,
+      startNodeId,
+      targetNodeId,
+      errorNodeIds: errorNodeIds ?? [],
+      timeLimitSeconds: timeLimitSeconds ?? null,
+      status: "DRAFT",
+    },
+  });
+
+  return NextResponse.json({ missionId: mission.id });
+}
+
+export async function GET(req: NextRequest) {
+  const creatorId = req.nextUrl.searchParams.get("creatorId");
+  const missions = await prisma.mission.findMany({
+    where: creatorId ? { creatorId } : undefined,
+    orderBy: { createdAt: "desc" },
+    include: { _count: { select: { sessions: true } } },
+  });
+  return NextResponse.json(missions);
+}

@@ -1,0 +1,43 @@
+import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { computeMissionMetrics } from "@/lib/metrics";
+import { MetricsCards } from "@/components/dashboard/MetricsCards";
+import { ParticipantsTable } from "@/components/dashboard/ParticipantsTable";
+
+interface PageProps {
+  params: { id: string };
+}
+
+export default async function MissionResultsPage({ params }: PageProps) {
+  const mission = await prisma.mission.findUnique({
+    where: { id: params.id },
+    include: { sessions: { orderBy: { startedAt: "desc" } } },
+  });
+
+  if (!mission) notFound();
+
+  const metrics = computeMissionMetrics(mission.sessions);
+  const shareUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/test/${mission.id}`;
+
+  return (
+    <div className="max-w-5xl mx-auto px-6 py-10 flex flex-col gap-8">
+      <div>
+        <p className="text-xs font-medium text-neutral-400 uppercase tracking-wide mb-1">
+          Missão
+        </p>
+        <h1 className="text-2xl font-semibold text-neutral-900">{mission.title}</h1>
+        <p className="text-neutral-500 mt-1 text-sm">
+          Link para participantes:{" "}
+          <span className="text-neutral-700 font-medium">{shareUrl}</span>
+        </p>
+      </div>
+
+      <MetricsCards metrics={metrics} />
+
+      <div>
+        <h2 className="text-sm font-semibold text-neutral-900 mb-3">Participantes</h2>
+        <ParticipantsTable sessions={mission.sessions} />
+      </div>
+    </div>
+  );
+}
