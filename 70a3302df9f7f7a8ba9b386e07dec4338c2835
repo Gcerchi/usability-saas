@@ -1,21 +1,12 @@
-import type { Metadata } from "next";
-import "./globals.css";
+import { PrismaClient } from "@prisma/client";
 
-export const metadata: Metadata = {
-  title: "Usability SaaS",
-  description: "Testes de usabilidade não moderados com protótipos do Figma",
-};
+// Evita múltiplas instâncias do PrismaClient em dev (hot reload do Next.js)
+const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <html lang="pt-BR">
-      <body className="bg-neutral-50 text-neutral-900 antialiased">
-        {children}
-      </body>
-    </html>
-  );
-}
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({
+    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
+  });
+
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;

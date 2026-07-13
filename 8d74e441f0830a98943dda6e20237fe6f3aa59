@@ -1,12 +1,56 @@
-import { PrismaClient } from "@prisma/client";
+import { TestSession } from "@prisma/client";
 
-// Evita múltiplas instâncias do PrismaClient em dev (hot reload do Next.js)
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+export interface MissionMetrics {
+  totalSessions: number;
+  successCount: number;
+  abandonedCount: number;
+  failedCount: number;
+  inProgressCount: number;
+  successRate: number; // 0-100
+  avgTaskTimeMs: number | null; // apenas sessões concluídas com sucesso
+  avgMisclicks: number | null;
+  medianTaskTimeMs: number | null;
+}
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
-  });
+export function computeMissionMetrics(sessions: TestSession[]): MissionMetrics {
+  const total = sessions.length;
+  const success = sessions.filter((s) => s.status === "SUCCESS");
+  const abandoned = sessions.filter((s) => s.status === "ABANDONED");
+  const failed = sessions.filter((s) => s.status === "FAILED");
+  const inProgress = sessions.filter((s) => s.status === "IN_PROGRESS");
 
-if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+  const successTimes = success
+    .map((s) => s.taskTimeMs)
+    .filter((t): t is number => t != null)
+    .sort((a, b) => a - b);
+
+  const avgTaskTimeMs =
+    successTimes.length > 0
+      ? Math.round(successTimes.reduce((a, b) => a + b, 0) / successTimes.length)
+      : null;
+
+  const medianTaskTimeMs =
+    successTimes.length > 0
+      ? successTimes[Math.floor(successTimes.length / 2)]
+      : null;
+
+  const finished = sessions.filter((s) => s.status !== "IN_PROGRESS");
+  const avgMisclicks =
+    finished.length > 0
+      ? Math.round(
+          (finished.reduce((sum, s) => sum + s.misclickCount, 0) / finished.length) * 10
+        ) / 10
+      : null;
+
+  return {
+    totalSessions: total,
+    successCount: success.length,
+    abandonedCount: abandoned.length,
+    failedCount: failed.length,
+    inProgressCount: inProgress.length,
+    successRate: total > 0 ? Math.round((success.length / total) * 1000) / 10 : 0,
+    avgTaskTimeMs,
+    avgMisclicks,
+    medianTaskTimeMs,
+  };
+}

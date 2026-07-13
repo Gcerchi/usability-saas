@@ -1,0 +1,41 @@
+import { NextRequest, NextResponse } from "next/server";
+import { parseFigmaUrl, buildEmbedUrl, FigmaUrlError } from "@/lib/figma";
+
+/**
+ * POST /api/figma/parse-url
+ * Body: { url: string }
+ *
+ * Usado pelo formulário "Importar protótipo do Figma" no fluxo de criação de
+ * Missão. Retorna os dados já normalizados para o criador escolher o
+ * startNodeId / targetNodeId a partir de uma prévia do protótipo.
+ */
+export async function POST(req: NextRequest) {
+  const { url } = await req.json();
+
+  if (!url || typeof url !== "string") {
+    return NextResponse.json({ error: "Campo 'url' é obrigatório." }, { status: 400 });
+  }
+
+  try {
+    const parsed = parseFigmaUrl(url);
+    const embedUrl = buildEmbedUrl(parsed, {
+      clientId: process.env.FIGMA_CLIENT_ID,
+    });
+
+    return NextResponse.json({
+      fileKey: parsed.fileKey,
+      fileName: parsed.fileName,
+      startingNodeId: parsed.nodeId,
+      pageId: parsed.pageId,
+      embedUrl,
+    });
+  } catch (err) {
+    if (err instanceof FigmaUrlError) {
+      return NextResponse.json({ error: err.message }, { status: 422 });
+    }
+    return NextResponse.json(
+      { error: "Erro inesperado ao processar a URL." },
+      { status: 500 }
+    );
+  }
+}

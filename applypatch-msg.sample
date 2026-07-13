@@ -1,0 +1,205 @@
+"use client";
+
+/**
+ * Fluxo de criação de missão em duas etapas:
+ *  1. Colar a URL do Figma -> chama /api/figma/parse-url -> mostra o embedUrl resolvido.
+ *  2. Preencher título, instruções e os node-ids de início/alvo -> chama /api/missions.
+ *
+ * MVP: os node-ids são digitados manualmente (o criador pega no botão "Copy link"
+ * do Figma em cada tela). Um preview clicável para selecioná-los visualmente é
+ * uma melhoria natural para uma v2 (ver README).
+ */
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+
+interface ParsedFigma {
+  fileKey: string;
+  fileName: string | null;
+  startingNodeId: string | null;
+  embedUrl: string;
+}
+
+// TODO: substituir por creatorId real vindo da sessão autenticada (NextAuth).
+const TEMP_CREATOR_ID = "demo-creator";
+
+export default function NewMissionPage() {
+  const router = useRouter();
+
+  const [figmaUrl, setFigmaUrl] = useState("");
+  const [parsed, setParsed] = useState<ParsedFigma | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [isParsing, setIsParsing] = useState(false);
+
+  const [title, setTitle] = useState("");
+  const [instructions, setInstructions] = useState("");
+  const [startNodeId, setStartNodeId] = useState("");
+  const [targetNodeId, setTargetNodeId] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  async function handleParseUrl() {
+    setIsParsing(true);
+    setParseError(null);
+    try {
+      const res = await fetch("/api/figma/parse-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: figmaUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setParseError(data.error ?? "Não foi possível importar essa URL.");
+        return;
+      }
+      setParsed(data);
+      if (data.startingNodeId) setStartNodeId(data.startingNodeId);
+    } catch {
+      setParseError("Erro de conexão ao importar a URL.");
+    } finally {
+      setIsParsing(false);
+    }
+  }
+
+  async function handleCreateMission() {
+    if (!parsed) return;
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      const res = await fetch("/api/missions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          instructions,
+          creatorId: TEMP_CREATOR_ID,
+          figmaUrl,
+          fileKey: parsed.fileKey,
+          fileName: parsed.fileName,
+          embedUrl: parsed.embedUrl,
+          startNodeId,
+          targetNodeId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSaveError(data.error ?? "Não foi possível criar a missão.");
+        return;
+      }
+      router.push(`/missions/${data.missionId}`);
+    } catch {
+      setSaveError("Erro de conexão ao criar a missão.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto px-6 py-12 flex flex-col gap-10">
+      <div>
+        <h1 className="text-2xl font-semibold text-neutral-900">Nova missão</h1>
+        <p className="text-neutral-500 text-sm mt-1">
+          Importe um protótipo do Figma e defina o caminho que o participante
+          precisa encontrar.
+        </p>
+      </div>
+
+      {/* Etapa 1: importar Figma */}
+      <section className="flex flex-col gap-3">
+        <label className="text-sm font-medium text-neutral-700">
+          URL do protótipo Figma
+        </label>
+        <div className="flex gap-2">
+          <input
+            value={figmaUrl}
+            onChange={(e) => setFigmaUrl(e.target.value)}
+            placeholder="https://www.figma.com/proto/..."
+            className="flex-1 border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
+          />
+          <button
+            onClick={handleParseUrl}
+            disabled={!figmaUrl || isParsing}
+            className="bg-neutral-900 text-white px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-40"
+          >
+            {isParsing ? "Importando…" : "Importar"}
+          </button>
+        </div>
+        {parseError && <p className="text-sm text-red-600">{parseError}</p>}
+        {parsed && (
+          <div className="border border-emerald-200 bg-emerald-50 rounded-lg px-4 py-3 text-sm text-emerald-700">
+            Protótipo importado com sucesso ({parsed.fileKey}).
+          </div>
+        )}
+      </section>
+
+      {/* Etapa 2: definir a missão (só aparece depois de importar) */}
+      {parsed && (
+        <section className="flex flex-col gap-5 border-t border-neutral-100 pt-8">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-neutral-700">
+              Título da missão
+            </label>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Ex: Chegue até a tela de checkout"
+              className="border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <label className="text-sm font-medium text-neutral-700">
+              Instruções para o participante
+            </label>
+            <textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              rows={4}
+              placeholder="Descreva o cenário e o que o participante deve tentar fazer."
+              className="border border-neutral-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-neutral-900"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-neutral-700">
+                Node-id inicial
+              </label>
+              <input
+                value={startNodeId}
+                onChange={(e) => setStartNodeId(e.target.value)}
+                placeholder="ex: 5019-210"
+                className="border border-neutral-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-neutral-900"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-sm font-medium text-neutral-700">
+                Node-id alvo (sucesso)
+              </label>
+              <input
+                value={targetNodeId}
+                onChange={(e) => setTargetNodeId(e.target.value)}
+                placeholder="ex: 5019-450"
+                className="border border-neutral-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-neutral-900"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-neutral-400 -mt-2">
+            Dica: no Figma, clique com o botão direito na tela desejada → "Copy
+            link" → o número depois de <code>node-id=</code> na URL copiada.
+          </p>
+
+          {saveError && <p className="text-sm text-red-600">{saveError}</p>}
+
+          <button
+            onClick={handleCreateMission}
+            disabled={!title || !instructions || !startNodeId || !targetNodeId || isSaving}
+            className="bg-neutral-900 text-white px-5 py-2.5 rounded-lg text-sm font-medium disabled:opacity-40 self-start"
+          >
+            {isSaving ? "Criando…" : "Criar missão"}
+          </button>
+        </section>
+      )}
+    </div>
+  );
+}

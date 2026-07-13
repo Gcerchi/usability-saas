@@ -1,0 +1,83 @@
+/**
+ * Parsing de URLs do Figma coladas pelo criador do teste.
+ *
+ * Aceita tanto o formato de app (www.figma.com/proto/...) quanto URLs já
+ * copiadas do botão "Share > Embed" do Figma. Extraímos fileKey, node-id e
+ * page-id e remontamos no formato exigido pelo Embed Kit 2.0:
+ *   https://embed.figma.com/proto/{fileKey}/{fileName}?node-id={nodeId}&...
+ */
+
+export interface ParsedFigmaUrl {
+  fileKey: string;
+  fileName: string | null;
+  nodeId: string | null; // sempre normalizado com "-" (ex: "5019-210")
+  pageId: string | null;
+}
+
+const FIGMA_URL_PATTERN =
+  /figma\.com\/(?:proto|design|file)\/([a-zA-Z0-9]+)\/([^/?]+)?/;
+
+export function parseFigmaUrl(rawUrl: string): ParsedFigmaUrl {
+  let url: URL;
+  try {
+    url = new URL(rawUrl.trim());
+  } catch {
+    throw new FigmaUrlError("URL inválida. Cole uma URL completa do Figma.");
+  }
+
+  if (!url.hostname.endsWith("figma.com")) {
+    throw new FigmaUrlError("A URL precisa ser do domínio figma.com.");
+  }
+
+  const match = rawUrl.match(FIGMA_URL_PATTERN);
+  if (!match) {
+    throw new FigmaUrlError(
+      "Não foi possível identificar o arquivo Figma nesta URL."
+    );
+  }
+
+  const [, fileKey, fileNameSlug] = match;
+
+  // node-id na URL do Figma pode vir como "5019-210" (URL) ou "5019:210" (interno).
+  // Normalizamos sempre para o formato com hífen, que é o aceito pela query string do embed.
+  const rawNodeId = url.searchParams.get("node-id");
+  const nodeId = rawNodeId ? rawNodeId.replace(":", "-") : null;
+  const pageId = url.searchParams.get("page-id");
+
+  return {
+    fileKey,
+    fileName: fileNameSlug ?? null,
+    nodeId,
+    pageId,
+  };
+}
+
+/**
+ * Monta a URL final para uso no iframe, seguindo o formato do Embed Kit 2.0.
+ * `startingNodeId` permite sobrepor o node-id da URL original (útil quando o
+ * criador quer definir manualmente o ponto de partida da missão).
+ */
+export function buildEmbedUrl(
+  parsed: ParsedFigmaUrl,
+  opts: { startingNodeId?: string; clientId?: string } = {}
+): string {
+  const params = new URLSearchParams();
+  params.set("kind", "proto");
+  params.set("content-scaling", "fixed");
+  params.set("scaling", "scale-down");
+
+  const nodeId = opts.startingNodeId ?? parsed.nodeId;
+  if (nodeId) {
+    params.set("node-id", nodeId);
+    params.set("starting-point-node-id", nodeId);
+  }
+  if (parsed.pageId) params.set("page-id", parsed.pageId);
+  if (opts.clientId) params.set("client-id", opts.clientId);
+  // embed-host identifica a origem para as métricas do próprio Figma (opcional)
+  params.set("embed-host", "usability-saas");
+
+  const fileName = parsed.fileName ?? "prototype";
+  return `https://embed.figma.com/proto/${parsed.fileKey}/${fileName}?${params.toString()}`;
+}
+
+export class FigmaUrlError extends Error {}

@@ -2,40 +2,38 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 /**
- * POST /api/results/finish
- * Body: FinishSessionInput (ver src/types/index.ts)
+ * POST /api/results/events
+ * Body: SessionEventInput (ver src/types/index.ts)
  *
- * Recebido tanto via fetch normal quanto via navigator.sendBeacon (por isso
- * lemos o corpo como texto puro — sendBeacon nem sempre define
- * Content-Type: application/json corretamente em todos os navegadores).
+ * Chamado pelo TestPlayer a cada mensagem relevante recebida do iframe do
+ * Figma. Escrita "best effort": o player não bloqueia a experiência do
+ * participante esperando esta chamada responder.
  */
 export async function POST(req: NextRequest) {
-  const raw = await req.text();
-  const body = JSON.parse(raw);
-  const { sessionId, status, taskTimeMs, misclickCount, navigationCount, reachedTarget } = body;
+  const { sessionId, type, nodeId, payload, elapsedMs } = await req.json();
 
-  if (!sessionId || !status) {
+  if (!sessionId || !type) {
     return NextResponse.json({ error: "Payload inválido." }, { status: 400 });
   }
 
-  // Idempotente: se a sessão já tiver um status final, não sobrescreve
-  // (evita corrida entre beforeunload e um SUCCESS já processado).
-  const existing = await prisma.testSession.findUnique({ where: { id: sessionId } });
-  if (!existing || existing.status !== "IN_PROGRESS") {
-    return NextResponse.json({ ok: true, skipped: true });
-  }
-
-  await prisma.testSession.update({
-    where: { id: sessionId },
-    data: {
-      status,
-      finishedAt: new Date(),
-      taskTimeMs,
-      misclickCount,
-      navigationCount,
-      reachedTarget,
-    },
+  await prisma.sessionEvent.create({
+    data: { sessionId, type, nodeId, payload, elapsedMs },
   });
+
+  // Mantém contadores/estado "quente" na sessão para leitura rápida no dashboard
+  // sem precisar agregar SessionEvent a cada render.
+  if (type === "PRESENTED_NODE_CHANGED" && nodeId) {
+    await prisma.testSession.update({
+      where: { id: sessionId },
+      data: { currentNodeId: nodeId, navigationCount: { increment: 1 } },
+    });
+  }
+  if (type === "MISCLICK") {
+    await prisma.testSession.update({
+      where: { id: sessionId },
+      data: { misclickCount: { increment: 1 } },
+    });
+  }
 
   return NextResponse.json({ ok: true });
 }

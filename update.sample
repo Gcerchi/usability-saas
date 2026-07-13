@@ -1,0 +1,27 @@
+import Link from "next/link";
+
+export default function HomePage() {
+  return (
+    <main className="min-h-screen flex flex-col items-center justify-center px-6 text-center">
+      <span className="text-xs font-medium text-neutral-400 uppercase tracking-wide mb-3">
+        Usability SaaS
+      </span>
+      <h1 className="text-3xl md:text-4xl font-semibold text-neutral-900 max-w-xl leading-tight">
+        Teste a usabilidade dos seus protótipos do Figma com participantes reais
+      </h1>
+      <p className="text-neutral-500 mt-4 max-w-md">
+        Importe um protótipo, defina uma missão e colete taxa de sucesso,
+        tempo na tarefa e misclicks — sem precisar moderar nada.
+      </p>
+
+      <div className="flex gap-3 mt-8">
+        <Link
+          href="/missions/new"
+          className="bg-neutral-900 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-neutral-700 transition-colors"
+        >
+          Criar minha primeira missão
+        </Link>
+      </div>
+    </main>
+  );
+}
